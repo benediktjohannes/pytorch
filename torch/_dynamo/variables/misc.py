@@ -433,6 +433,9 @@ class FrameSummaryVariable(VariableTracker):
         super().__init__(**kwargs)
         self.frame_summary = frame_summary
 
+    def python_type(self) -> type:
+        return traceback.FrameSummary
+
     def var_getattr(self, tx: "InstructionTranslator", name: str) -> VariableTracker:
         if name == "lineno":
             return variables.ConstantVariable.create(self.frame_summary.lineno)
@@ -579,7 +582,7 @@ class ExceptionVariable(VariableTracker):
         # Used to preserve the original exception location when re-raising.
         self.python_stack: traceback.StackSummary | None = None
 
-    def set_context(self, context: "ExceptionVariable") -> None:
+    def set_context(self, context: VariableTracker) -> None:
         self.__context__ = context
 
     def reconstruct(self, codegen: "PyCodegen") -> None:
@@ -617,7 +620,8 @@ class ExceptionVariable(VariableTracker):
 
         name = name_var.as_python_constant()
         if name == "__context__":
-            assert isinstance(val, ExceptionVariable)
+            # Constant can be either an Exceptior or None
+            assert isinstance(val, (ExceptionVariable, ConstantVariable))
             self.set_context(val)
         elif name == "__cause__":
             if val.is_constant_none() or isinstance(
