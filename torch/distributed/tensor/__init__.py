@@ -15,9 +15,14 @@ from torch.distributed.tensor._api import (
     zeros,
 )
 from torch.distributed.tensor._memory_sharded import (
+    BlockStorageShardingSpec,
+    distribute_block_storage,
     distribute_storage,
+    distribute_tensor_group,
+    FlattenedStorageGroup,
     MemoryShardedDTensor,
-    StorageShardingSpec,
+    TensorGroupShardingSpec,
+    TensorGroupStorage,
 )
 from torch.distributed.tensor.placement_types import (
     Partial,
@@ -39,8 +44,13 @@ __all__ = [
     "distribute_tensor",
     "distribute_module",
     "distribute_storage",
+    "distribute_block_storage",
+    "distribute_tensor_group",
     "MemoryShardedDTensor",
-    "StorageShardingSpec",
+    "BlockStorageShardingSpec",
+    "TensorGroupShardingSpec",
+    "TensorGroupStorage",
+    "FlattenedStorageGroup",
     "Shard",
     "Replicate",
     "Partial",
@@ -96,8 +106,12 @@ DTensor.__module__ = "torch.distributed.tensor"
 distribute_tensor.__module__ = "torch.distributed.tensor"
 distribute_module.__module__ = "torch.distributed.tensor"
 distribute_storage.__module__ = "torch.distributed.tensor"
+distribute_tensor_group.__module__ = "torch.distributed.tensor"
 MemoryShardedDTensor.__module__ = "torch.distributed.tensor"
-StorageShardingSpec.__module__ = "torch.distributed.tensor"
+BlockStorageShardingSpec.__module__ = "torch.distributed.tensor"
+TensorGroupShardingSpec.__module__ = "torch.distributed.tensor"
+TensorGroupStorage.__module__ = "torch.distributed.tensor"
+FlattenedStorageGroup.__module__ = "torch.distributed.tensor"
 ones.__module__ = "torch.distributed.tensor"
 empty.__module__ = "torch.distributed.tensor"
 full.__module__ = "torch.distributed.tensor"

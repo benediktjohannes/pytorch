@@ -11,9 +11,16 @@ from torch.distributed.tensor import (
     Replicate,
 )
 from torch.distributed.tensor._memory_sharded import (
+    BlockStorageShardingSpec,
+    distribute_block_storage,
     distribute_storage,
+    distribute_tensor_group,
+    FlattenedStorageGroup,
+    FlattenedStorageShardingSpec,
     MemoryShardedDTensor,
-    StorageShardingSpec,
+    ShardParamInfo,
+    TensorGroupShardingSpec,
+    TensorGroupStorage,
 )
 from torch.testing._internal.common_utils import run_tests, TestCase
 from torch.testing._internal.distributed._tensor.common_dtensor import (
@@ -22,38 +29,56 @@ from torch.testing._internal.distributed._tensor.common_dtensor import (
 )
 
 
-class TestStorageShardingSpec(TestCase):
-    """Unit tests for StorageShardingSpec dataclass."""
+class TestBlockStorageShardingSpec(TestCase):
+    """Unit tests for BlockStorageShardingSpec dataclass."""
 
-    def test_storage_sharding_spec_creation(self):
-        """Test that StorageShardingSpec can be created with all fields."""
-        spec = StorageShardingSpec(
+    def test_block_storage_sharding_spec_creation(self):
+        """Test that BlockStorageShardingSpec can be created with all fields."""
+        spec = BlockStorageShardingSpec(
             orig_size=torch.Size([16, 32]),
             orig_stride=(32, 1),
-            shard_dim=0,
-            mesh_dim="dp",
-            padded_shard_size=4,
-            actual_shard_size=4,
+            shard_dims=(0,),
+            mesh_dims=("dp",),
+            padded_shard_sizes=(4,),
+            actual_shard_sizes=(4,),
+            mesh_dim_indices=(0,),
         )
         self.assertEqual(spec.orig_size, torch.Size([16, 32]))
         self.assertEqual(spec.orig_stride, (32, 1))
-        self.assertEqual(spec.shard_dim, 0)
-        self.assertEqual(spec.mesh_dim, "dp")
-        self.assertEqual(spec.padded_shard_size, 4)
-        self.assertEqual(spec.actual_shard_size, 4)
+        self.assertEqual(spec.shard_dims, (0,))
+        self.assertEqual(spec.mesh_dims, ("dp",))
+        self.assertEqual(spec.padded_shard_sizes, (4,))
+        self.assertEqual(spec.actual_shard_sizes, (4,))
 
-    def test_storage_sharding_spec_uneven(self):
-        """Test StorageShardingSpec with uneven sharding (different actual vs padded)."""
-        spec = StorageShardingSpec(
+    def test_block_storage_sharding_spec_uneven(self):
+        """Test BlockStorageShardingSpec with uneven sharding (different actual vs padded)."""
+        spec = BlockStorageShardingSpec(
             orig_size=torch.Size([13, 32]),
             orig_stride=(32, 1),
-            shard_dim=0,
-            mesh_dim="dp",
-            padded_shard_size=4,  # ceiling(13/4) = 4
-            actual_shard_size=1,  # last rank gets only 1 row
+            shard_dims=(0,),
+            mesh_dims=("dp",),
+            padded_shard_sizes=(4,),  # ceiling(13/4) = 4
+            actual_shard_sizes=(1,),  # last rank gets only 1 row
+            mesh_dim_indices=(0,),
         )
-        self.assertEqual(spec.padded_shard_size, 4)
-        self.assertEqual(spec.actual_shard_size, 1)
+        self.assertEqual(spec.padded_shard_sizes, (4,))
+        self.assertEqual(spec.actual_shard_sizes, (1,))
+
+    def test_block_storage_sharding_spec_multi_dim(self):
+        """Test BlockStorageShardingSpec with multi-dimensional sharding."""
+        spec = BlockStorageShardingSpec(
+            orig_size=torch.Size([8, 4]),
+            orig_stride=(4, 1),
+            shard_dims=(0, 1),
+            mesh_dims=("dp", "tp"),
+            padded_shard_sizes=(2, 2),
+            actual_shard_sizes=(2, 2),
+            mesh_dim_indices=(0, 1),
+        )
+        self.assertEqual(spec.shard_dims, (0, 1))
+        self.assertEqual(spec.mesh_dims, ("dp", "tp"))
+        self.assertEqual(spec.padded_shard_sizes, (2, 2))
+        self.assertEqual(spec.actual_shard_sizes, (2, 2))
 
 
 class TestMemoryShardedDTensor(DTensorTestBase):
@@ -69,13 +94,14 @@ class TestMemoryShardedDTensor(DTensorTestBase):
         device_mesh = init_device_mesh(self.device_type, (self.world_size,))
         local_tensor = torch.randn(4, 8, device=self.device_type)
 
-        storage_spec = StorageShardingSpec(
+        storage_spec = BlockStorageShardingSpec(
             orig_size=torch.Size([16, 8]),
             orig_stride=(8, 1),
-            shard_dim=0,
-            mesh_dim="default",
-            padded_shard_size=4,
-            actual_shard_size=4,
+            shard_dims=(0,),
+            mesh_dims=("default",),
+            padded_shard_sizes=(4,),
+            actual_shard_sizes=(4,),
+            mesh_dim_indices=(0,),
         )
 
         pg = dist.distributed_c10d._get_default_group()
@@ -96,13 +122,14 @@ class TestMemoryShardedDTensor(DTensorTestBase):
         device_mesh = init_device_mesh(self.device_type, (self.world_size,))
         local_tensor = torch.randn(4, 8, device=self.device_type)
 
-        storage_spec = StorageShardingSpec(
+        storage_spec = BlockStorageShardingSpec(
             orig_size=torch.Size([16, 8]),
             orig_stride=(8, 1),
-            shard_dim=0,
-            mesh_dim="default",
-            padded_shard_size=4,
-            actual_shard_size=4,
+            shard_dims=(0,),
+            mesh_dims=("default",),
+            padded_shard_sizes=(4,),
+            actual_shard_sizes=(4,),
+            mesh_dim_indices=(0,),
         )
 
         pg = dist.distributed_c10d._get_default_group()
@@ -122,13 +149,14 @@ class TestMemoryShardedDTensor(DTensorTestBase):
         device_mesh = init_device_mesh(self.device_type, (self.world_size,))
         local_tensor = torch.randn(4, 8, device=self.device_type)
 
-        storage_spec = StorageShardingSpec(
+        storage_spec = BlockStorageShardingSpec(
             orig_size=torch.Size([16, 8]),
             orig_stride=(8, 1),
-            shard_dim=0,
-            mesh_dim="default",
-            padded_shard_size=4,
-            actual_shard_size=4,
+            shard_dims=(0,),
+            mesh_dims=("default",),
+            padded_shard_sizes=(4,),
+            actual_shard_sizes=(4,),
+            mesh_dim_indices=(0,),
         )
 
         pg = dist.distributed_c10d._get_default_group()
@@ -148,13 +176,14 @@ class TestMemoryShardedDTensor(DTensorTestBase):
         device_mesh = init_device_mesh(self.device_type, (self.world_size,))
         local_tensor = torch.randn(4, 8, device=self.device_type)
 
-        storage_spec = StorageShardingSpec(
+        storage_spec = BlockStorageShardingSpec(
             orig_size=torch.Size([16, 8]),
             orig_stride=(8, 1),
-            shard_dim=0,
-            mesh_dim="default",
-            padded_shard_size=4,
-            actual_shard_size=4,
+            shard_dims=(0,),
+            mesh_dims=("default",),
+            padded_shard_sizes=(4,),
+            actual_shard_sizes=(4,),
+            mesh_dim_indices=(0,),
         )
 
         pg = dist.distributed_c10d._get_default_group()
@@ -175,13 +204,14 @@ class TestMemoryShardedDTensor(DTensorTestBase):
         device_mesh = init_device_mesh(self.device_type, (self.world_size,))
         local_tensor = torch.randn(4, 8, device=self.device_type)
 
-        storage_spec = StorageShardingSpec(
+        storage_spec = BlockStorageShardingSpec(
             orig_size=torch.Size([16, 8]),
             orig_stride=(8, 1),
-            shard_dim=0,
-            mesh_dim="default",
-            padded_shard_size=4,
-            actual_shard_size=4,
+            shard_dims=(0,),
+            mesh_dims=("default",),
+            padded_shard_sizes=(4,),
+            actual_shard_sizes=(4,),
+            mesh_dim_indices=(0,),
         )
 
         pg = dist.distributed_c10d._get_default_group()
@@ -203,13 +233,14 @@ class TestMemoryShardedDTensor(DTensorTestBase):
         device_mesh = init_device_mesh(self.device_type, (self.world_size,))
         local_tensor = torch.randn(4, 8, device=self.device_type)
 
-        storage_spec = StorageShardingSpec(
+        storage_spec = BlockStorageShardingSpec(
             orig_size=torch.Size([16, 8]),
             orig_stride=(8, 1),
-            shard_dim=0,
-            mesh_dim="default",
-            padded_shard_size=4,
-            actual_shard_size=4,
+            shard_dims=(0,),
+            mesh_dims=("default",),
+            padded_shard_sizes=(4,),
+            actual_shard_sizes=(4,),
+            mesh_dim_indices=(0,),
         )
 
         pg = dist.distributed_c10d._get_default_group()
@@ -231,13 +262,14 @@ class TestMemoryShardedDTensor(DTensorTestBase):
         device_mesh = init_device_mesh(self.device_type, (self.world_size,))
         local_tensor = torch.randn(4, 8, device=self.device_type)
 
-        storage_spec = StorageShardingSpec(
+        storage_spec = BlockStorageShardingSpec(
             orig_size=torch.Size([16, 8]),
             orig_stride=(8, 1),
-            shard_dim=0,
-            mesh_dim="default",
-            padded_shard_size=4,
-            actual_shard_size=4,
+            shard_dims=(0,),
+            mesh_dims=("default",),
+            padded_shard_sizes=(4,),
+            actual_shard_sizes=(4,),
+            mesh_dim_indices=(0,),
         )
 
         pg = dist.distributed_c10d._get_default_group()
@@ -257,13 +289,14 @@ class TestMemoryShardedDTensor(DTensorTestBase):
         device_mesh = init_device_mesh(self.device_type, (self.world_size,))
         local_tensor = torch.randn(4, 8, device=self.device_type, dtype=torch.float16)
 
-        storage_spec = StorageShardingSpec(
+        storage_spec = BlockStorageShardingSpec(
             orig_size=torch.Size([16, 8]),
             orig_stride=(8, 1),
-            shard_dim=0,
-            mesh_dim="default",
-            padded_shard_size=4,
-            actual_shard_size=4,
+            shard_dims=(0,),
+            mesh_dims=("default",),
+            padded_shard_sizes=(4,),
+            actual_shard_sizes=(4,),
+            mesh_dim_indices=(0,),
         )
 
         pg = dist.distributed_c10d._get_default_group()
@@ -283,13 +316,14 @@ class TestMemoryShardedDTensor(DTensorTestBase):
         device_mesh = init_device_mesh(self.device_type, (self.world_size,))
         local_tensor = torch.randn(4, 8, device=self.device_type)
 
-        storage_spec = StorageShardingSpec(
+        storage_spec = BlockStorageShardingSpec(
             orig_size=torch.Size([16, 8]),
             orig_stride=(8, 1),
-            shard_dim=0,
-            mesh_dim="default",
-            padded_shard_size=4,
-            actual_shard_size=4,
+            shard_dims=(0,),
+            mesh_dims=("default",),
+            padded_shard_sizes=(4,),
+            actual_shard_sizes=(4,),
+            mesh_dim_indices=(0,),
         )
 
         pg = dist.distributed_c10d._get_default_group()
@@ -309,13 +343,14 @@ class TestMemoryShardedDTensor(DTensorTestBase):
         device_mesh = init_device_mesh(self.device_type, (self.world_size,))
         local_tensor = torch.randn(4, 8, device=self.device_type, requires_grad=True)
 
-        storage_spec = StorageShardingSpec(
+        storage_spec = BlockStorageShardingSpec(
             orig_size=torch.Size([16, 8]),
             orig_stride=(8, 1),
-            shard_dim=0,
-            mesh_dim="default",
-            padded_shard_size=4,
-            actual_shard_size=4,
+            shard_dims=(0,),
+            mesh_dims=("default",),
+            padded_shard_sizes=(4,),
+            actual_shard_sizes=(4,),
+            mesh_dim_indices=(0,),
         )
 
         pg = dist.distributed_c10d._get_default_group()
@@ -346,13 +381,14 @@ class TestMemoryShardedDTensor(DTensorTestBase):
         device_mesh = init_device_mesh(self.device_type, (self.world_size,))
         local_tensor = torch.randn(4, 8, device=self.device_type)
 
-        storage_spec = StorageShardingSpec(
+        storage_spec = BlockStorageShardingSpec(
             orig_size=torch.Size([16, 8]),
             orig_stride=(8, 1),
-            shard_dim=0,
-            mesh_dim="default",
-            padded_shard_size=4,
-            actual_shard_size=4,
+            shard_dims=(0,),
+            mesh_dims=("default",),
+            padded_shard_sizes=(4,),
+            actual_shard_sizes=(4,),
+            mesh_dim_indices=(0,),
         )
 
         pg = dist.distributed_c10d._get_default_group()
@@ -365,8 +401,8 @@ class TestMemoryShardedDTensor(DTensorTestBase):
         )
 
         self.assertEqual(msdt.storage_spec, storage_spec)
-        self.assertEqual(msdt.storage_spec.shard_dim, 0)
-        self.assertEqual(msdt.storage_spec.mesh_dim, "default")
+        self.assertEqual(msdt.storage_spec.shard_dims[0], 0)
+        self.assertEqual(msdt.storage_spec.mesh_dims[0], "default")
 
     @with_comms
     def test_process_group_property(self):
@@ -374,13 +410,14 @@ class TestMemoryShardedDTensor(DTensorTestBase):
         device_mesh = init_device_mesh(self.device_type, (self.world_size,))
         local_tensor = torch.randn(4, 8, device=self.device_type)
 
-        storage_spec = StorageShardingSpec(
+        storage_spec = BlockStorageShardingSpec(
             orig_size=torch.Size([16, 8]),
             orig_stride=(8, 1),
-            shard_dim=0,
-            mesh_dim="default",
-            padded_shard_size=4,
-            actual_shard_size=4,
+            shard_dims=(0,),
+            mesh_dims=("default",),
+            padded_shard_sizes=(4,),
+            actual_shard_sizes=(4,),
+            mesh_dim_indices=(0,),
         )
 
         pg = dist.distributed_c10d._get_default_group()
@@ -429,7 +466,7 @@ class TestDistributeStorage(DTensorTestBase):
 
         msdt = distribute_storage(dtensor, dim=0, mesh_dim=0)
 
-        self.assertEqual(msdt.storage_spec.shard_dim, 0)
+        self.assertEqual(msdt.storage_spec.shard_dims[0], 0)
         self.assertEqual(msdt.full_size(0), 20)
         # 20 / 4 = 5 per rank
         self.assertEqual(msdt.size(0), 5)
@@ -444,7 +481,7 @@ class TestDistributeStorage(DTensorTestBase):
 
         msdt = distribute_storage(dtensor, dim=1, mesh_dim=0)
 
-        self.assertEqual(msdt.storage_spec.shard_dim, 1)
+        self.assertEqual(msdt.storage_spec.shard_dims[0], 1)
         self.assertEqual(msdt.full_size(1), 20)
         # 20 / 4 = 5 per rank
         self.assertEqual(msdt.size(1), 5)
@@ -465,7 +502,7 @@ class TestDistributeStorage(DTensorTestBase):
         # Shard on dp dimension (size 2)
         msdt = distribute_storage(dtensor, dim=0, mesh_dim="dp")
 
-        self.assertEqual(msdt.storage_spec.mesh_dim, "dp")
+        self.assertEqual(msdt.storage_spec.mesh_dims[0], "dp")
         self.assertEqual(msdt.full_size(0), 8)
         # 8 / 2 (dp world size) = 4 per rank
         self.assertEqual(msdt.size(0), 4)
@@ -505,7 +542,7 @@ class TestDistributeStorage(DTensorTestBase):
         # dim=-1 should be equivalent to dim=1
         msdt = distribute_storage(dtensor, dim=-1, mesh_dim=0)
 
-        self.assertEqual(msdt.storage_spec.shard_dim, 1)
+        self.assertEqual(msdt.storage_spec.shard_dims[0], 1)
         self.assertEqual(msdt.full_size(1), 8)
 
     @with_comms
@@ -521,16 +558,16 @@ class TestDistributeStorage(DTensorTestBase):
         msdt = distribute_storage(dtensor, dim=0, mesh_dim=0)
 
         self.assertEqual(msdt.full_size(0), 13)
-        self.assertEqual(msdt.storage_spec.padded_shard_size, 4)
+        self.assertEqual(msdt.storage_spec.padded_shard_sizes[0], 4)
 
         rank = dist.get_rank()
         if rank < 3:
             self.assertEqual(msdt.size(0), 4)
-            self.assertEqual(msdt.storage_spec.actual_shard_size, 4)
+            self.assertEqual(msdt.storage_spec.actual_shard_sizes[0], 4)
         else:
             # Last rank gets only 1 row
             self.assertEqual(msdt.size(0), 1)
-            self.assertEqual(msdt.storage_spec.actual_shard_size, 1)
+            self.assertEqual(msdt.storage_spec.actual_shard_sizes[0], 1)
 
     @with_comms
     def test_uneven_sharding_data_integrity(self):
@@ -892,8 +929,8 @@ class TestFSDPIntegration(DTensorTestBase):
         self.assertIsInstance(msdt, MemoryShardedDTensor)
         self.assertEqual(msdt.shape, torch.Size([4, 8]))
         self.assertEqual(msdt.full_shape, torch.Size([16, 8]))
-        self.assertEqual(msdt.storage_spec.shard_dim, 0)
-        self.assertEqual(msdt.storage_spec.mesh_dim, "dp")
+        self.assertEqual(msdt.storage_spec.shard_dims[0], 0)
+        self.assertEqual(msdt.storage_spec.mesh_dims[0], "dp")
 
     @with_comms
     def test_from_local_shard_with_mesh_dim_index(self):
@@ -939,14 +976,14 @@ class TestFSDPIntegration(DTensorTestBase):
         )
 
         self.assertEqual(msdt.full_shape, torch.Size([13, 8]))
-        self.assertEqual(msdt.storage_spec.padded_shard_size, 4)
+        self.assertEqual(msdt.storage_spec.padded_shard_sizes[0], 4)
 
         if rank < 3:
             self.assertEqual(msdt.size(0), 4)
-            self.assertEqual(msdt.storage_spec.actual_shard_size, 4)
+            self.assertEqual(msdt.storage_spec.actual_shard_sizes[0], 4)
         else:
             self.assertEqual(msdt.size(0), 1)
-            self.assertEqual(msdt.storage_spec.actual_shard_size, 1)
+            self.assertEqual(msdt.storage_spec.actual_shard_sizes[0], 1)
 
     @with_comms
     def test_from_local_shard_requires_grad(self):
@@ -1131,7 +1168,7 @@ class TestIntegration(DTensorTestBase):
         # Shard on "data_parallel" dimension
         msdt = distribute_storage(dtensor, dim=0, mesh_dim="data_parallel")
 
-        self.assertEqual(msdt.storage_spec.mesh_dim, "data_parallel")
+        self.assertEqual(msdt.storage_spec.mesh_dims[0], "data_parallel")
         self.assertEqual(msdt.size(0), 4)  # 8 / 2 = 4
 
         # Unshard
@@ -1164,6 +1201,563 @@ class TestIntegration(DTensorTestBase):
         unsharded = msdt.unshard()
         self.assertEqual(unsharded.shape, torch.Size([15, 8]))
         self.assertTrue(torch.equal(unsharded.to_local(), full_tensor))
+
+
+class TestShardParamInfo(TestCase):
+    """Unit tests for ShardParamInfo dataclass."""
+
+    def test_shard_param_info_in_shard(self):
+        """Test ShardParamInfo when param is in shard."""
+        spi = ShardParamInfo(
+            in_shard=True,
+            offset_in_shard=10,
+            numel_in_shard=20,
+            intra_param_start=5,
+            intra_param_end=25,
+        )
+        self.assertTrue(spi.in_shard)
+        self.assertEqual(spi.offset_in_shard, 10)
+        self.assertEqual(spi.numel_in_shard, 20)
+        self.assertEqual(spi.intra_param_start, 5)
+        self.assertEqual(spi.intra_param_end, 25)
+
+    def test_shard_param_info_not_in_shard(self):
+        """Test ShardParamInfo when param is not in shard."""
+        spi = ShardParamInfo(in_shard=False)
+        self.assertFalse(spi.in_shard)
+        self.assertIsNone(spi.offset_in_shard)
+        self.assertIsNone(spi.numel_in_shard)
+
+
+class TestFlattenedStorageShardingSpec(TestCase):
+    """Unit tests for FlattenedStorageShardingSpec dataclass."""
+
+    def test_flattened_spec_creation(self):
+        """Test FlattenedStorageShardingSpec can be created."""
+        spec = FlattenedStorageShardingSpec(
+            param_shapes=(torch.Size([8, 4]), torch.Size([8])),
+            param_strides=((4, 1), (1,)),
+            param_numels=(32, 8),
+            total_numel=40,
+            padded_total_numel=40,
+            mesh_dim="dp",
+            local_offset=0,
+            local_numel=10,
+            shard_param_infos=(
+                ShardParamInfo(in_shard=True, offset_in_shard=0, numel_in_shard=10, intra_param_start=0, intra_param_end=10),
+                ShardParamInfo(in_shard=False),
+            ),
+            param_index=0,
+        )
+        self.assertEqual(len(spec.param_shapes), 2)
+        self.assertEqual(spec.total_numel, 40)
+        self.assertEqual(spec.param_index, 0)
+
+
+class TestFlattenedStorageGroup(DTensorTestBase):
+    """Distributed tests for FlattenedStorageGroup (FSDP v1-style flattening)."""
+
+    @property
+    def world_size(self) -> int:
+        return 4
+
+    @with_comms
+    def test_flattened_storage_basic(self):
+        """
+        Simulate FSDP v1 pattern:
+        1. Multiple params are flattened and concatenated
+        2. The concatenated buffer is sharded across ranks
+        3. Each rank holds a contiguous slice of the flat buffer
+        4. All-gather reconstructs the full buffer
+        5. Views are created back into original param shapes
+        """
+        import math
+
+        # Create a 1D mesh across all available ranks
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        # Create "module parameters" of different sizes
+        # This simulates a module with weight and bias
+        weight = torch.randn(8, 4, device=self.device_type)  # 32 elements
+        bias = torch.randn(8, device=self.device_type)       # 8 elements
+        # Total: 40 elements
+
+        # Create flattened storage group
+        group = FlattenedStorageGroup(
+            params=[weight, bias],
+            device_mesh=mesh,
+            mesh_dim=0,
+        )
+
+        # Shard - this flattens, concatenates, and distributes
+        sharded_weight, sharded_bias = group.shard()
+
+        # Verify: both are MemoryShardedDTensor in flattened mode
+        self.assertIsInstance(sharded_weight, MemoryShardedDTensor)
+        self.assertTrue(sharded_weight.is_flattened_mode())
+        self.assertIsInstance(sharded_bias, MemoryShardedDTensor)
+        self.assertTrue(sharded_bias.is_flattened_mode())
+
+        # Verify: they share the same flat buffer
+        self.assertIs(sharded_weight._flat_buffer, sharded_bias._flat_buffer)
+
+        # Verify: flat buffer size is total_numel / world_size (padded)
+        total_numel = 40
+        padded_numel = math.ceil(total_numel / self.world_size) * self.world_size
+        shard_size = padded_numel // self.world_size
+        self.assertEqual(sharded_weight._flat_buffer.numel(), shard_size)
+
+        # Unshard all at once (single all-gather)
+        unsharded_weight, unsharded_bias = group.unshard_all()
+
+        # Verify: data is correct after round-trip
+        self.assertEqual(unsharded_weight.shape, weight.shape)
+        self.assertEqual(unsharded_bias.shape, bias.shape)
+        self.assertTrue(torch.equal(unsharded_weight.to_local(), weight))
+        self.assertTrue(torch.equal(unsharded_bias.to_local(), bias))
+
+    @with_comms
+    def test_flattened_storage_full_shape(self):
+        """Test that full_shape returns correct original shape."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        weight = torch.randn(8, 4, device=self.device_type)
+        bias = torch.randn(8, device=self.device_type)
+
+        group = FlattenedStorageGroup([weight, bias], mesh, 0)
+        sharded_weight, sharded_bias = group.shard()
+
+        # full_shape should return original shapes
+        self.assertEqual(sharded_weight.full_shape, torch.Size([8, 4]))
+        self.assertEqual(sharded_bias.full_shape, torch.Size([8]))
+
+    @with_comms
+    def test_flattened_storage_partial_shard(self):
+        """
+        Test the case where a single param spans multiple ranks.
+        This is key to FSDP v1 behavior - params are split across ranks.
+        """
+        import math
+
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        # Create a large param that will span multiple ranks
+        # With world_size=4 and 100 elements, each rank gets 25 elements
+        large_param = torch.randn(100, device=self.device_type)
+        small_param = torch.randn(20, device=self.device_type)
+        # Total: 120 elements → 30 per rank (with world_size=4)
+
+        group = FlattenedStorageGroup([large_param, small_param], mesh, 0)
+        sharded_large, sharded_small = group.shard()
+
+        # Check ShardParamInfo for large param
+        large_spi = sharded_large._storage_spec.shard_param_infos[0]
+
+        # large_param (100 elements) spans all ranks
+        # Rank 0: elements 0-29 of large_param (all 30 from large)
+        # Rank 1: elements 30-59 of large_param (all 30 from large)
+        # Rank 2: elements 60-89 of large_param (all 30 from large)
+        # Rank 3: elements 90-99 of large_param + 0-19 of small_param
+        self.assertTrue(large_spi.in_shard)  # All ranks have part of large_param
+
+        # Verify unshard reconstructs correctly
+        unsharded = group.unshard_all()
+        self.assertTrue(torch.equal(unsharded[0].to_local(), large_param))
+        self.assertTrue(torch.equal(unsharded[1].to_local(), small_param))
+
+    @with_comms
+    def test_flattened_storage_with_2d_mesh(self):
+        """
+        Test with 2D mesh (HSDP scenario).
+        mesh_dim specifies which dimension to shard on.
+        """
+        # 2D mesh: 2 replicas x 2 shards
+        mesh = init_device_mesh(
+            self.device_type,
+            (2, 2),
+            mesh_dim_names=("replicate", "shard"),
+        )
+
+        param = torch.randn(16, device=self.device_type)
+
+        # Shard on "shard" dimension (dim 1)
+        group = FlattenedStorageGroup([param], mesh, mesh_dim="shard")
+        (sharded_param,) = group.shard()
+
+        # Each shard group (2 ranks) holds half the data
+        # With shard world_size=2: 16 / 2 = 8 elements per shard
+        self.assertEqual(sharded_param._flat_buffer.numel(), 8)
+
+        (unsharded,) = group.unshard_all()
+        self.assertTrue(torch.equal(unsharded.to_local(), param))
+
+    @with_comms
+    def test_flattened_storage_with_tp(self):
+        """
+        Test with Tensor Parallel + Flattened Storage (TP + FSDP v1 style).
+
+        In this scenario:
+        - Parameters are first sharded by TP (e.g., column-wise for linear weights)
+        - Then the TP-local shards are flattened and concatenated
+        - The flattened buffer is further sharded across the DP dimension
+        """
+        import math
+
+        # 2D mesh: 2 DP replicas x 2 TP shards
+        mesh = init_device_mesh(
+            self.device_type,
+            (2, 2),
+            mesh_dim_names=("dp", "tp"),
+        )
+
+        # mesh.shape = (dp=2, tp=2)
+        # tp is dimension 1, dp is dimension 0
+        tp_world_size = mesh.shape[1]  # TP dimension (index 1)
+        dp_world_size = mesh.shape[0]  # DP dimension (index 0)
+
+        # Create a weight that would be TP-sharded (e.g., column parallel)
+        # Full shape: [8, 16], TP-sharded to [8, 8] per TP rank
+        # Each TP rank holds a column shard
+        local_tp_shard = torch.randn(
+            8, 16 // tp_world_size, device=self.device_type
+        )  # [8, 8] = 64 elements per TP rank
+
+        # Create another param (bias, replicated across TP)
+        bias = torch.randn(8, device=self.device_type)  # 8 elements
+
+        # Flatten the TP-local shards across DP dimension
+        # This simulates: TP shards the param, then FSDP v1-style flattening on DP
+        group = FlattenedStorageGroup(
+            params=[local_tp_shard, bias],
+            device_mesh=mesh,
+            mesh_dim="dp",  # Flatten across DP dimension
+        )
+
+        sharded_weight, sharded_bias = group.shard()
+
+        # Verify: both are in flattened mode
+        self.assertTrue(sharded_weight.is_flattened_mode())
+        self.assertTrue(sharded_bias.is_flattened_mode())
+
+        # Verify: they share the same flat buffer
+        self.assertIs(sharded_weight._flat_buffer, sharded_bias._flat_buffer)
+
+        # Total elements per TP rank: 64 + 8 = 72
+        # With dp_world_size=2: 36 elements per DP shard
+        total_numel = 72
+        padded_numel = math.ceil(total_numel / dp_world_size) * dp_world_size
+        shard_size = padded_numel // dp_world_size
+        self.assertEqual(sharded_weight._flat_buffer.numel(), shard_size)
+
+        # Unshard across DP (all-gather within DP group)
+        unsharded = group.unshard_all()
+
+        # Verify: data is correct after round-trip
+        # Note: this only unshards the DP dimension, TP sharding remains
+        self.assertTrue(torch.equal(unsharded[0].to_local(), local_tp_shard))
+        self.assertTrue(torch.equal(unsharded[1].to_local(), bias))
+
+    @with_comms
+    def test_flattened_storage_uneven_division(self):
+        """Test when total_numel is not evenly divisible by world_size."""
+        import math
+
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        # Total: 41 elements (not divisible by 4)
+        # Padded to 44, shard_size = 11
+        param1 = torch.randn(25, device=self.device_type)
+        param2 = torch.randn(16, device=self.device_type)
+
+        group = FlattenedStorageGroup([param1, param2], mesh, 0)
+        sharded1, sharded2 = group.shard()
+
+        # Verify shard size (padded)
+        total_numel = 41
+        padded_numel = math.ceil(total_numel / self.world_size) * self.world_size
+        shard_size = padded_numel // self.world_size
+        self.assertEqual(sharded1._flat_buffer.numel(), shard_size)
+
+        # Verify unshard works correctly
+        unsharded = group.unshard_all()
+        self.assertTrue(torch.equal(unsharded[0].to_local(), param1))
+        self.assertTrue(torch.equal(unsharded[1].to_local(), param2))
+
+    @with_comms
+    def test_flattened_storage_single_param(self):
+        """Test FlattenedStorageGroup with a single parameter."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        param = torch.randn(16, 8, device=self.device_type)
+
+        group = FlattenedStorageGroup([param], mesh, 0)
+        (sharded,) = group.shard()
+
+        self.assertTrue(sharded.is_flattened_mode())
+        self.assertEqual(sharded.full_shape, torch.Size([16, 8]))
+
+        (unsharded,) = group.unshard_all()
+        self.assertTrue(torch.equal(unsharded.to_local(), param))
+
+    @with_comms
+    def test_flattened_storage_individual_unshard(self):
+        """Test that individual unshard() works on flattened mode DTensor."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        weight = torch.randn(8, 4, device=self.device_type)
+        bias = torch.randn(8, device=self.device_type)
+
+        group = FlattenedStorageGroup([weight, bias], mesh, 0)
+        sharded_weight, sharded_bias = group.shard()
+
+        # Call unshard on individual tensor
+        unsharded_weight = sharded_weight.unshard()
+        unsharded_bias = sharded_bias.unshard()
+
+        self.assertEqual(unsharded_weight.shape, weight.shape)
+        self.assertEqual(unsharded_bias.shape, bias.shape)
+        self.assertTrue(torch.equal(unsharded_weight.to_local(), weight))
+        self.assertTrue(torch.equal(unsharded_bias.to_local(), bias))
+
+    @with_comms
+    def test_flattened_storage_get_flat_buffer(self):
+        """Test get_flat_buffer() returns the shared buffer."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        weight = torch.randn(8, 4, device=self.device_type)
+        bias = torch.randn(8, device=self.device_type)
+
+        group = FlattenedStorageGroup([weight, bias], mesh, 0)
+        group.shard()
+
+        flat_buffer = group.get_flat_buffer()
+        self.assertIsInstance(flat_buffer, torch.Tensor)
+        self.assertEqual(flat_buffer.ndim, 1)
+
+    @with_comms
+    def test_flattened_storage_get_all_gather_input(self):
+        """Test get_all_gather_input returns flat buffer in flattened mode."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        weight = torch.randn(8, 4, device=self.device_type)
+        bias = torch.randn(8, device=self.device_type)
+
+        group = FlattenedStorageGroup([weight, bias], mesh, 0)
+        sharded_weight, sharded_bias = group.shard()
+
+        # Both should return the same flat buffer
+        ag_input_weight = sharded_weight.get_all_gather_input()
+        ag_input_bias = sharded_bias.get_all_gather_input()
+
+        self.assertIs(ag_input_weight, ag_input_bias)
+        self.assertEqual(ag_input_weight.ndim, 1)
+
+    @with_comms
+    def test_flattened_storage_many_params(self):
+        """Test FlattenedStorageGroup with many parameters."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        # Create 10 parameters of varying sizes
+        params = [torch.randn(i + 1, device=self.device_type) for i in range(10)]
+        # Total elements: 1+2+3+...+10 = 55
+
+        group = FlattenedStorageGroup(params, mesh, 0)
+        sharded_params = group.shard()
+
+        self.assertEqual(len(sharded_params), 10)
+
+        # All should share same flat buffer
+        for sp in sharded_params:
+            self.assertIs(sp._flat_buffer, sharded_params[0]._flat_buffer)
+
+        # Unshard and verify
+        unsharded = group.unshard_all()
+        for i, (orig, unsh) in enumerate(zip(params, unsharded)):
+            self.assertTrue(
+                torch.equal(unsh.to_local(), orig),
+                f"Mismatch at param {i}",
+            )
+
+
+class TestTensorGroupStorage(DTensorTestBase):
+    """Tests for TensorGroupStorage with mode='tensor' (whole tensor sharding)."""
+
+    @property
+    def world_size(self):
+        return 4
+
+    @with_comms
+    def test_tensor_mode_basic(self):
+        """Test basic tensor mode sharding."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        # 4 tensors, 4 ranks: each rank owns exactly 1 tensor
+        tensors = [
+            torch.randn(8, 4, device=self.device_type),
+            torch.randn(10, 6, device=self.device_type),
+            torch.randn(4, device=self.device_type),
+            torch.randn(16, 16, device=self.device_type),
+        ]
+
+        group = TensorGroupStorage(tensors, mesh, 0, mode="tensor")
+        sharded = group.shard()
+
+        self.assertEqual(len(sharded), 4)
+
+        rank = dist.get_rank()
+        for i, s in enumerate(sharded):
+            self.assertTrue(s.is_tensor_group_mode())
+            self.assertEqual(s.storage_spec.param_index, i)
+            if s.storage_spec.owns_tensor:
+                self.assertEqual(s.storage_spec.param_to_rank[i], rank)
+
+        # Unshard all
+        unsharded = group.unshard_all()
+        for orig, unsh in zip(tensors, unsharded):
+            self.assertTrue(torch.equal(unsh.to_local(), orig))
+
+    @with_comms
+    def test_tensor_mode_more_tensors_than_ranks(self):
+        """Test tensor mode with more tensors than ranks."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        # 7 tensors, 4 ranks: [2, 2, 2, 1] distribution
+        tensors = [torch.randn(i + 1, device=self.device_type) for i in range(7)]
+
+        group = TensorGroupStorage(tensors, mesh, 0, mode="tensor")
+        sharded = group.shard()
+
+        self.assertEqual(len(sharded), 7)
+
+        # Verify distribution is contiguous
+        rank = dist.get_rank()
+        owned_indices = []
+        for i, s in enumerate(sharded):
+            if s.storage_spec.owns_tensor:
+                owned_indices.append(i)
+                self.assertEqual(s.storage_spec.param_to_rank[i], rank)
+
+        # Check contiguity
+        if len(owned_indices) > 0:
+            for j in range(len(owned_indices) - 1):
+                self.assertEqual(owned_indices[j] + 1, owned_indices[j + 1])
+
+        # Unshard all
+        unsharded = group.unshard_all()
+        for orig, unsh in zip(tensors, unsharded):
+            self.assertTrue(torch.equal(unsh.to_local(), orig))
+
+    @with_comms
+    def test_tensor_mode_fewer_tensors_than_ranks(self):
+        """Test tensor mode with fewer tensors than ranks."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        # 2 tensors, 4 ranks: ranks 0,1 own one tensor each, ranks 2,3 own nothing
+        tensors = [
+            torch.randn(8, 4, device=self.device_type),
+            torch.randn(10, 6, device=self.device_type),
+        ]
+
+        group = TensorGroupStorage(tensors, mesh, 0, mode="tensor")
+        sharded = group.shard()
+
+        self.assertEqual(len(sharded), 2)
+
+        rank = dist.get_rank()
+        if rank == 0:
+            self.assertTrue(sharded[0].storage_spec.owns_tensor)
+            self.assertFalse(sharded[1].storage_spec.owns_tensor)
+        elif rank == 1:
+            self.assertFalse(sharded[0].storage_spec.owns_tensor)
+            self.assertTrue(sharded[1].storage_spec.owns_tensor)
+        else:
+            self.assertFalse(sharded[0].storage_spec.owns_tensor)
+            self.assertFalse(sharded[1].storage_spec.owns_tensor)
+
+        # Unshard all
+        unsharded = group.unshard_all()
+        for orig, unsh in zip(tensors, unsharded):
+            self.assertTrue(torch.equal(unsh.to_local(), orig))
+
+    @with_comms
+    def test_tensor_mode_unshard_individual(self):
+        """Test unsharding individual tensors in tensor mode."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        tensors = [
+            torch.randn(8, 4, device=self.device_type),
+            torch.randn(10, 6, device=self.device_type),
+            torch.randn(4, device=self.device_type),
+            torch.randn(16, 16, device=self.device_type),
+        ]
+
+        group = TensorGroupStorage(tensors, mesh, 0, mode="tensor")
+        sharded = group.shard()
+
+        # Unshard each tensor individually
+        for i, (s, orig) in enumerate(zip(sharded, tensors)):
+            unsharded = s.unshard()
+            self.assertTrue(
+                torch.equal(unsharded.to_local(), orig),
+                f"Mismatch at tensor {i}",
+            )
+
+    @with_comms
+    def test_distribute_tensor_group_convenience(self):
+        """Test the distribute_tensor_group convenience function."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        tensors = [torch.randn(i + 5, device=self.device_type) for i in range(4)]
+
+        # Tensor mode
+        sharded = distribute_tensor_group(tensors, mesh, 0, mode="tensor")
+        self.assertEqual(len(sharded), 4)
+        for s in sharded:
+            self.assertTrue(s.is_tensor_group_mode())
+
+        # Element mode (default)
+        sharded_elem = distribute_tensor_group(tensors, mesh, 0)  # default mode="element"
+        self.assertEqual(len(sharded_elem), 4)
+        for s in sharded_elem:
+            self.assertTrue(s.is_flattened_mode())
+
+    @with_comms
+    def test_tensor_group_spec_properties(self):
+        """Test TensorGroupShardingSpec properties."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        tensors = [
+            torch.randn(8, 4, device=self.device_type),
+            torch.randn(10, 6, device=self.device_type),
+        ]
+
+        group = TensorGroupStorage(tensors, mesh, 0, mode="tensor")
+        sharded = group.shard()
+
+        spec = sharded[0].storage_spec
+        self.assertEqual(spec.total_params, 2)
+        self.assertEqual(spec.param_shapes[0], torch.Size([8, 4]))
+        self.assertEqual(spec.param_shapes[1], torch.Size([10, 6]))
+        self.assertEqual(spec.param_numels[0], 32)
+        self.assertEqual(spec.param_numels[1], 60)
+
+        # Check assignment
+        self.assertEqual(spec.param_to_rank[0], 0)
+        self.assertEqual(spec.param_to_rank[1], 1)
+
+    @with_comms
+    def test_tensor_mode_repr(self):
+        """Test __repr__ for tensor mode."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        tensors = [torch.randn(8, 4, device=self.device_type)]
+
+        group = TensorGroupStorage(tensors, mesh, 0, mode="tensor")
+        sharded = group.shard()
+
+        repr_str = repr(sharded[0])
+        self.assertIn("tensor_group_mode=True", repr_str)
+        self.assertIn("owns_tensor=", repr_str)
 
 
 if __name__ == "__main__":

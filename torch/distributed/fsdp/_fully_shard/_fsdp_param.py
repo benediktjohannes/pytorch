@@ -15,8 +15,8 @@ from torch.distributed.fsdp._fully_shard._fsdp_common import DDPMeshInfo
 from torch.distributed.tensor import DTensor, Replicate, Shard
 from torch.distributed.tensor._dtensor_spec import DTensorSpec, TensorMeta
 from torch.distributed.tensor._memory_sharded import (
+    BlockStorageShardingSpec,
     MemoryShardedDTensor,
-    StorageShardingSpec,
 )
 from torch.distributed.tensor.placement_types import _StridedShard, Placement
 
@@ -1042,14 +1042,15 @@ class FSDPParam:
             if isinstance(self.sharded_param, MemoryShardedDTensor):
                 self.sharded_param._padded_local = local_tensor.view(-1)
                 old_spec = self.sharded_param._storage_spec
-                if old_spec.actual_shard_size != length:
-                    new_spec = StorageShardingSpec(
+                if old_spec.actual_shard_sizes[0] != length:
+                    new_spec = BlockStorageShardingSpec(
                         orig_size=old_spec.orig_size,
                         orig_stride=old_spec.orig_stride,
-                        shard_dim=old_spec.shard_dim,
-                        mesh_dim=old_spec.mesh_dim,
-                        padded_shard_size=old_spec.padded_shard_size,
-                        actual_shard_size=length,
+                        shard_dims=old_spec.shard_dims,
+                        mesh_dims=old_spec.mesh_dims,
+                        padded_shard_sizes=old_spec.padded_shard_sizes,
+                        actual_shard_sizes=(length,),
+                        mesh_dim_indices=old_spec.mesh_dim_indices,
                     )
                     self.sharded_param._storage_spec = new_spec
 
