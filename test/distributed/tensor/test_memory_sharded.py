@@ -8,7 +8,9 @@ from torch.distributed.tensor import (
     DTensor,
     distribute_tensor,
     init_device_mesh,
+    Partial,
     Replicate,
+    Shard,
 )
 from torch.distributed.tensor._memory_sharded import (
     BlockStorageShardingSpec,
@@ -1758,6 +1760,178 @@ class TestTensorGroupStorage(DTensorTestBase):
         repr_str = repr(sharded[0])
         self.assertIn("tensor_group_mode=True", repr_str)
         self.assertIn("owns_tensor=", repr_str)
+
+
+class TestDTensorInput(DTensorTestBase):
+    """Tests for DTensor input support in TensorGroupStorage and distribute_tensor_group."""
+
+    @property
+    def world_size(self):
+        return 4
+
+    @with_comms
+    def test_element_mode_with_dtensor_input(self):
+        """Test element mode sharding with DTensor inputs."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        # Create DTensors with Replicate placement
+        t1 = torch.randn(8, 4, device=self.device_type)
+        t2 = torch.randn(10, 6, device=self.device_type)
+        dtensor1 = distribute_tensor(t1, mesh, [Replicate()])
+        dtensor2 = distribute_tensor(t2, mesh, [Replicate()])
+
+        # Shard using element mode
+        group = TensorGroupStorage([dtensor1, dtensor2], mesh, 0, mode="element")
+        sharded = group.shard()
+
+        self.assertEqual(len(sharded), 2)
+        for s in sharded:
+            self.assertTrue(s.is_flattened_mode())
+
+        # Unshard and verify
+        unsharded = group.unshard_all()
+        self.assertTrue(torch.equal(unsharded[0].to_local(), t1))
+        self.assertTrue(torch.equal(unsharded[1].to_local(), t2))
+
+    @with_comms
+    def test_tensor_mode_with_dtensor_input(self):
+        """Test tensor mode sharding with DTensor inputs."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        # Create DTensors with Replicate placement
+        tensors = [
+            torch.randn(8, 4, device=self.device_type),
+            torch.randn(10, 6, device=self.device_type),
+            torch.randn(4, device=self.device_type),
+            torch.randn(16, 16, device=self.device_type),
+        ]
+        dtensors = [distribute_tensor(t, mesh, [Replicate()]) for t in tensors]
+
+        # Shard using tensor mode
+        group = TensorGroupStorage(dtensors, mesh, 0, mode="tensor")
+        sharded = group.shard()
+
+        self.assertEqual(len(sharded), 4)
+        for s in sharded:
+            self.assertTrue(s.is_tensor_group_mode())
+
+        # Unshard and verify
+        unsharded = group.unshard_all()
+        for orig, unsh in zip(tensors, unsharded):
+            self.assertTrue(torch.equal(unsh.to_local(), orig))
+
+    @with_comms
+    def test_mixed_tensor_and_dtensor_input(self):
+        """Test mixing plain tensors and DTensors as input."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        # Mix of plain tensor and DTensor
+        plain_tensor = torch.randn(8, 4, device=self.device_type)
+        dtensor_base = torch.randn(10, 6, device=self.device_type)
+        dtensor = distribute_tensor(dtensor_base, mesh, [Replicate()])
+
+        # Shard using element mode
+        sharded = distribute_tensor_group([plain_tensor, dtensor], mesh, 0, mode="element")
+
+        self.assertEqual(len(sharded), 2)
+
+        # Unshard using individual unshard
+        unsharded0 = sharded[0].unshard()
+        unsharded1 = sharded[1].unshard()
+
+        self.assertTrue(torch.equal(unsharded0.to_local(), plain_tensor))
+        self.assertTrue(torch.equal(unsharded1.to_local(), dtensor_base))
+
+    @with_comms
+    def test_2d_mesh_dtensor_input(self):
+        """Test TP+FSDP pattern: DTensor sharded on tp, storage sharded on dp."""
+        # 2D mesh: 2 dp x 2 tp
+        mesh = init_device_mesh(
+            self.device_type, (2, 2), mesh_dim_names=("dp", "tp")
+        )
+
+        # Create DTensor that is Shard on tp, Replicate on dp
+        # This is the TP+FSDP pattern - TP shards the weight columns
+        full_tensor = torch.randn(8, 4, device=self.device_type)
+        dtensor = distribute_tensor(full_tensor, mesh, [Replicate(), Shard(1)])
+
+        # Now shard storage on dp dimension (Replicate on dp, so valid)
+        sharded = distribute_tensor_group([dtensor], mesh, "dp", mode="element")
+
+        self.assertEqual(len(sharded), 1)
+        self.assertTrue(sharded[0].is_flattened_mode())
+
+        # The local tensor should be the TP-sharded portion
+        # Shape: [8, 2] (4 cols / 2 tp ranks)
+        # After dp storage sharding, this is further split
+
+    @with_comms
+    def test_dtensor_wrong_mesh_raises(self):
+        """Test that DTensor with different mesh raises ValueError."""
+        # Create a 1D mesh for the DTensor
+        mesh1 = init_device_mesh(self.device_type, (self.world_size,))
+
+        # Create a 2D mesh for the storage sharding - this is different
+        mesh2 = init_device_mesh(
+            self.device_type, (2, 2), mesh_dim_names=("dp", "tp")
+        )
+
+        # Create DTensor with mesh1
+        t = torch.randn(8, 4, device=self.device_type)
+        dtensor = distribute_tensor(t, mesh1, [Replicate()])
+
+        # Try to shard with mesh2 - should raise since meshes are different
+        with self.assertRaises(ValueError) as ctx:
+            TensorGroupStorage([dtensor], mesh2, "dp", mode="element")
+
+        self.assertIn("does not match", str(ctx.exception))
+
+    @with_comms
+    def test_dtensor_shard_on_target_raises(self):
+        """Test that DTensor with Shard on target mesh_dim raises ValueError."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        # Create DTensor with Shard placement on dim 0
+        full_tensor = torch.randn(16, 4, device=self.device_type)
+        dtensor = distribute_tensor(full_tensor, mesh, [Shard(0)])
+
+        # Try to shard storage on the same dim - should raise
+        with self.assertRaises(ValueError) as ctx:
+            TensorGroupStorage([dtensor], mesh, 0, mode="element")
+
+        self.assertIn("already has Shard placement", str(ctx.exception))
+
+    @with_comms
+    def test_dtensor_partial_on_target_raises(self):
+        """Test that DTensor with Partial on target mesh_dim raises ValueError."""
+        mesh = init_device_mesh(self.device_type, (self.world_size,))
+
+        # Create a DTensor with Partial placement
+        # We need to create this manually since distribute_tensor doesn't create Partial
+        from torch.distributed.tensor._dtensor_spec import DTensorSpec, TensorMeta
+
+        local_tensor = torch.randn(8, 4, device=self.device_type)
+        tensor_meta = TensorMeta(
+            shape=local_tensor.shape,
+            stride=local_tensor.stride(),
+            dtype=local_tensor.dtype,
+        )
+        dtensor_spec = DTensorSpec(
+            mesh=mesh,
+            placements=(Partial(),),
+            tensor_meta=tensor_meta,
+        )
+        dtensor = DTensor(
+            local_tensor,
+            dtensor_spec,
+            requires_grad=False,
+        )
+
+        # Try to shard storage - should raise
+        with self.assertRaises(ValueError) as ctx:
+            TensorGroupStorage([dtensor], mesh, 0, mode="element")
+
+        self.assertIn("Partial placement", str(ctx.exception))
 
 
 if __name__ == "__main__":

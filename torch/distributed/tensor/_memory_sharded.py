@@ -144,6 +144,49 @@ class TensorGroupShardingSpec:
 StorageSpec = Union[BlockStorageShardingSpec, FlattenedStorageShardingSpec, TensorGroupShardingSpec]
 
 
+def _validate_dtensor_for_storage_sharding(
+    dtensor: DTensor,
+    device_mesh: DeviceMesh,
+    mesh_dim_idx: int,
+) -> None:
+    """
+    Validate that a DTensor can be storage-sharded on the given mesh dimension.
+
+    FSDP-style storage sharding requires the data to be replicated on the target
+    mesh dimension. If data is already sharded or has pending reductions, we
+    cannot properly distribute the storage.
+
+    Args:
+        dtensor: The DTensor to validate.
+        device_mesh: The target device mesh for storage sharding.
+        mesh_dim_idx: The mesh dimension index to shard on.
+
+    Raises:
+        ValueError: If the DTensor cannot be storage-sharded on the given mesh dim.
+    """
+    from torch.distributed.tensor.placement_types import Partial, Shard
+
+    # Check same mesh
+    if dtensor.device_mesh != device_mesh:
+        raise ValueError(
+            f"DTensor device_mesh {dtensor.device_mesh} does not match "
+            f"target device_mesh {device_mesh}"
+        )
+
+    # Check placement on target mesh_dim is Replicate (not Shard or Partial)
+    placement = dtensor.placements[mesh_dim_idx]
+    if isinstance(placement, Shard):
+        raise ValueError(
+            f"Cannot shard storage on mesh_dim {mesh_dim_idx}: "
+            f"DTensor already has Shard placement on this dimension"
+        )
+    if isinstance(placement, Partial):
+        raise ValueError(
+            f"Cannot shard storage on mesh_dim {mesh_dim_idx}: "
+            f"DTensor has Partial placement (reduction pending)"
+        )
+
+
 class MemoryShardedDTensor(DTensor):
     """
     A DTensor subclass that physically shards storage across devices.
@@ -1159,7 +1202,7 @@ class TensorGroupStorage:
 
     def __init__(
         self,
-        params: list[torch.Tensor],
+        params: list[torch.Tensor | DTensor],
         device_mesh: DeviceMesh,
         mesh_dim: int | str,
         mode: str = "element",
@@ -1168,7 +1211,9 @@ class TensorGroupStorage:
         Initialize a TensorGroupStorage.
 
         Args:
-            params: List of tensors to distribute.
+            params: List of tensors to distribute. Can be plain torch.Tensor or
+                DTensor. DTensor inputs must have Replicate placement on the
+                target mesh dimension.
             device_mesh: The DeviceMesh for distributed operations.
             mesh_dim: The mesh dimension (name or index) to shard across.
             mode: Sharding mode - "element" (FSDP v1 style) or "tensor" (whole tensors).
@@ -1176,7 +1221,6 @@ class TensorGroupStorage:
         if mode not in ("element", "tensor"):
             raise ValueError(f"mode must be 'element' or 'tensor', got '{mode}'")
 
-        self._params = params
         self._device_mesh = device_mesh
         self._mesh_dim = mesh_dim
         self._mode = mode
@@ -1185,7 +1229,7 @@ class TensorGroupStorage:
         self._process_group: Optional[dist.ProcessGroup] = None
         self._mesh_dim_name: Optional[str] = None
 
-        # Resolve mesh_dim to index and name
+        # Resolve mesh_dim to index and name first (needed for validation)
         if isinstance(mesh_dim, str):
             mesh_dim_names = device_mesh.mesh_dim_names
             if mesh_dim_names is None or mesh_dim not in mesh_dim_names:
@@ -1206,6 +1250,16 @@ class TensorGroupStorage:
             self._mesh_dim_name = (
                 mesh_dim_names[mesh_dim] if mesh_dim_names else "default"
             )
+
+        # Validate and extract local tensors from DTensor inputs
+        local_params = []
+        for p in params:
+            if isinstance(p, DTensor):
+                _validate_dtensor_for_storage_sharding(p, device_mesh, self._mesh_dim_idx)
+                local_params.append(p.to_local())
+            else:
+                local_params.append(p)
+        self._params = local_params
 
     def _get_process_group(self) -> dist.ProcessGroup:
         """Get or cache the process group for this mesh dimension."""
@@ -1598,7 +1652,7 @@ class FlattenedStorageGroup(TensorGroupStorage):
 
 
 def distribute_tensor_group(
-    tensors: list[torch.Tensor],
+    tensors: list[torch.Tensor | DTensor],
     device_mesh: DeviceMesh,
     mesh_dim: int | str,
     mode: str = "element",
@@ -1609,7 +1663,9 @@ def distribute_tensor_group(
     This convenience function creates a TensorGroupStorage and shards the tensors.
 
     Args:
-        tensors: List of tensors to distribute.
+        tensors: List of tensors to distribute. Can be plain torch.Tensor or
+            DTensor. DTensor inputs must have Replicate placement on the
+            target mesh dimension.
         device_mesh: The DeviceMesh for distributed operations.
         mesh_dim: The mesh dimension (name or index) to shard across.
         mode: Sharding mode - "element" (FSDP v1 style) or "tensor" (whole tensors).
