@@ -752,20 +752,17 @@ __launch_bounds__(Warps* kWarpSize) void tinygemm_m16n8k16_chunk_kernel(
 #endif
         }
 
-#pragma unroll
-        for (int k = 0; k < 2; ++k) {
 #if defined(USE_ROCM)
-          c[0] += cTmp[k][0];
-          c[1] += cTmp[k][1];
-          c[2] += cTmp[k][2];
-          c[3] += cTmp[k][3];
+        c[0] += 2 * cTmp[k][0];
+        c[1] += 2 * cTmp[k][1];
+        c[2] += 2 * cTmp[k][2];
+        c[3] +=  2 *cTmp[k][3];
 #else
-          c.x += cTmp[k].x;
-          c.y += cTmp[k].y;
-          c.z += cTmp[k].z;
-          c.w += cTmp[k].w;
+        c.x += 2 * cTmp[k].x;
+        c.y += 2 * cTmp[k].y;
+        c.z += 2 *cTmp[k].z;
+        c.w += 2 * cTmp[k].w;
 #endif
-        }
       }
     }
   } // for all tiles under kTilesLimit
@@ -847,20 +844,17 @@ __launch_bounds__(Warps* kWarpSize) void tinygemm_m16n8k16_chunk_kernel(
 #endif
       }
 
-#pragma unroll
-      for (int k = 0; k < 2; ++k) {
 #if defined(USE_ROCM)
-        c[0] += cTmp[k][0];
-        c[1] += cTmp[k][1];
-        c[2] += cTmp[k][2];
-        c[3] += cTmp[k][3];
+      c[0] += 2 * cTmp[k][0];
+      c[1] += 2 * cTmp[k][1];
+      c[2] += 2 * cTmp[k][2];
+      c[3] += 2 * cTmp[k][3];
 #else
-        c.x += cTmp[k].x;
-        c.y += cTmp[k].y;
-        c.z += cTmp[k].z;
-        c.w += cTmp[k].w;
+      c.x += 2 * cTmp[k].x;
+      c.y += 2 * cTmp[k].y;
+      c.z += 2 * cTmp[k].z;
+      c.w += 2 * cTmp[k].w;
 #endif
-      }
     }
   }
 
