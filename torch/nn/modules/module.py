@@ -1902,39 +1902,39 @@ class Module:
             return inner()
 
         if _global_forward_hooks_always_called or self._forward_hooks_always_called:
-            try:
-                return inner()
-            except Exception:
-                # run always called hooks if they have not already been run
-                # For now only forward hooks have the always_call option but perhaps
-                # this functionality should be added to full backward hooks as well.
-                for hook_id, hook in _global_forward_hooks.items():
-                    if hook_id in _global_forward_hooks_always_called and hook_id not in called_always_called_hooks:  # type: ignore[possibly-undefined]
-                        try:
-                            hook_result = hook(self, args, result)  # type: ignore[possibly-undefined]
-                            if hook_result is not None:
-                                result = hook_result
-                        except Exception as e:
-                            warnings.warn("global module forward hook with ``always_call=True`` raised an exception "
-                                          f"that was silenced as another error was raised in forward: {str(e)}", stacklevel=2)
-                            continue
-
-                for hook_id, hook in self._forward_hooks.items():
-                    if hook_id in self._forward_hooks_always_called and hook_id not in called_always_called_hooks:  # type: ignore[possibly-undefined]
-                        try:
-                            if hook_id in self._forward_hooks_with_kwargs:
-                                hook_result = hook(self, args, kwargs, result)  # type: ignore[possibly-undefined]
-                            else:
-                                hook_result = hook(self, args, result)  # type: ignore[possibly-undefined]
-                            if hook_result is not None:
-                                result = hook_result
-                        except Exception as e:
-                            warnings.warn("module forward hook with ``always_call=True`` raised an exception "
-                                          f"that was silenced as another error was raised in forward: {str(e)}", stacklevel=2)
-                            continue
-                raise
-        else:
+        try:
             return inner()
+        except Exception:
+            # run always called hooks if they have not already been run
+            # For now only forward hooks have the always_call option but perhaps
+            # this functionality should be added to full backward hooks as well.
+            for hook_id, hook in _global_forward_hooks.items():
+                if hook_id in _global_forward_hooks_always_called and hook_id not in called_always_called_hooks:  # type: ignore[possibly-undefined]
+                    try:
+                        hook_result = hook(self, args, result)  # type: ignore[possibly-undefined]
+                        if hook_result is not None:
+                            result = hook_result
+                    except Exception as e:
+                        warnings.warn("global module forward hook with ``always_call=True`` raised an exception "
+                                    f"that was silenced as another error was raised in forward: {str(e)}", stacklevel=2)
+                        continue
+
+            for hook_id, hook in self._forward_hooks.items():
+                if hook_id in self._forward_hooks_always_called and hook_id not in called_always_called_hooks:  # type: ignore[possibly-undefined]
+                    try:
+                        if hook_id in self._forward_hooks_with_kwargs:
+                            hook_result = hook(self, args, kwargs, result)  # type: ignore[possibly-undefined]
+                        else:
+                            hook_result = hook(self, args, result)  # type: ignore[possibly-undefined]
+                        if hook_result is not None:
+                            result = hook_result
+                    except Exception as e:
+                        warnings.warn("module forward hook with ``always_call=True`` raised an exception "
+                                    f"that was silenced as another error was raised in forward: {str(e)}", stacklevel=2)
+                        continue
+            raise
+    else:
+        return inner()
     # fmt: on
 
     __call__: Callable[..., Any] = _wrapped_call_impl
