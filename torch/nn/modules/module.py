@@ -1,4 +1,3 @@
-
 # mypy: allow-untyped-defs
 
 import functools
@@ -1804,7 +1803,6 @@ class Module:
                 full_backward_hooks, non_full_backward_hooks = self._get_backward_hooks()
 
             if _global_forward_pre_hooks or self._forward_pre_hooks:
-                # Globale Pre-Hooks
                 for hook_id, hook in _global_forward_pre_hooks.items():
                     if hook_id in self._forward_pre_hooks_with_kwargs:
                         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
@@ -1822,7 +1820,6 @@ class Module:
                             if not isinstance(args_result, tuple):
                                 args_result = (args_result,)
                             args = args_result
-                # Lokale Pre-Hooks
                 for hook_id, hook in self._forward_pre_hooks.items():
                     if hook_id in self._forward_pre_hooks_with_kwargs:
                         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
@@ -1848,7 +1845,6 @@ class Module:
 
             result = forward_call(*args, **kwargs)
             if _global_forward_hooks or self._forward_hooks:
-                # Globale Hooks
                 for hook_id, hook in _global_forward_hooks.items():
                     if hook_id in _global_forward_hooks_always_called:
                         called_always_called_hooks.add(hook_id)
@@ -1860,7 +1856,6 @@ class Module:
 
                     if hook_result is not None:
                         result = hook_result
-                # Lokale Hooks
                 for hook_id, hook in self._forward_hooks.items():
                     if hook_id in self._forward_hooks_always_called:
                         called_always_called_hooks.add(hook_id)
@@ -1906,7 +1901,6 @@ class Module:
         if torch.compiler.is_compiling():
             return inner()
 
-        # Only use try/except if there are always-called hooks that need to run on exception
         if _global_forward_hooks_always_called or self._forward_hooks_always_called:
             try:
                 return inner()
