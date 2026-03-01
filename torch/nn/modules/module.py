@@ -1804,7 +1804,7 @@ class Module:
 
             if _global_forward_pre_hooks or self._forward_pre_hooks:
                 for hook_id, hook in _global_forward_pre_hooks.items():
-                    if hook_id in self._forward_pre_hooks_with_kwargs:
+                    if hook_id in _global_forward_hooks_with_kwargs:
                         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
                         if args_kwargs_result is not None:
                             if isinstance(args_kwargs_result, tuple) and len(args_kwargs_result) == 2:
