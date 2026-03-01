@@ -1931,6 +1931,7 @@ class Module:
                         warnings.warn("module forward hook with ``always_call=True`` raised an exception "
                                       f"that was silenced as another error was raised in forward: {str(e)}", stacklevel=2)
                         continue
+            # raise exception raised in try block
             raise
     # fmt: on
 
