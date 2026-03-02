@@ -476,6 +476,20 @@ class _MultiHandle(RemovableHandle):
     def __setstate__(self, state: tuple[RemovableHandle, ...]) -> None:
         self.handles = state
 
+
+def register_multi_grad_hook(
+    tensors: Sequence[torch.Tensor],
+    fn: Union[
+        Callable[[Sequence[Optional[torch.Tensor]]], None],
+        Callable[[torch.Tensor], None],
+    ],
+    *,
+    mode: Literal["all", "any"] = "all",
+) -> RemovableHandle:
+    r"""Register a multi-grad backward hook.
+
+    There are two supported modes: ``"all"`` and ``"any"``.
+
     Under the ``"all"`` mode, the hook will be called after gradients with respect to every tensor in
     :attr:`tensors` have been computed. If a tensor is in :attr:`tensors` but
     is not part of the graph, or if a tensor is not needed to compute the gradients
