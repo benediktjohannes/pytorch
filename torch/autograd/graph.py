@@ -630,34 +630,25 @@ _TID: TypeAlias = tuple[int, int, int]
 _SID: TypeAlias = tuple[int, int]
 
 
-def _get_tid(tensor: torch.Tensor) -> _TID:
-    # FIXME: This is almost definitely a bug.
-    if isinstance(
-        tensor,
-        (
-            torch._subclasses.fake_tensor.FakeTensor,
-            torch._subclasses.functional_tensor.FunctionalTensor,
-        ),
-    ):
+def _is_fake_or_functional(tensor):
+    mod = type(tensor).__module__
+    name = type(tensor).__name__
+    return (mod == 'torch._subclasses.fake_tensor' and name == 'FakeTensor') or \
+           (mod == 'torch._subclasses.functional_tensor' and name == 'FunctionalTensor')
+
+def _get_tid(tensor: torch.Tensor) -> int:
+    if _is_fake_or_functional(tensor):
         data_ptr = 0
     else:
         data_ptr = tensor.data_ptr()
-    return (id(tensor), data_ptr, tensor._version)
+    return (id(tensor) << 128) | (data_ptr << 64) | tensor._version
 
-
-def _get_sid(tensor: torch.Tensor) -> _SID:
-    # FIXME: This is almost definitely a bug.
-    if isinstance(
-        tensor,
-        (
-            torch._subclasses.fake_tensor.FakeTensor,
-            torch._subclasses.functional_tensor.FunctionalTensor,
-        ),
-    ):
+def _get_sid(tensor: torch.Tensor) -> int:
+    if _is_fake_or_functional(tensor):
         data_ptr = 0
     else:
         data_ptr = tensor.data_ptr()
-    return (data_ptr, tensor._version)
+    return (data_ptr << 64) | tensor._version
 
 
 class _Handle:
