@@ -750,8 +750,8 @@ class _AllowMutationOnSavedContext:
     def __init__(self) -> None:
         self.cloned: MutableMapping[_Handle, torch.Tensor] = WeakKeyDictionary()
         self.original: MutableMapping[_Handle, torch.Tensor] = WeakKeyDictionary()
-        self.tid_to_weakhandle: MutableMapping[int, _Handle] = WeakValueDictionary()
-        self.sid_to_tid: dict[int, set[int]] = defaultdict(set)
+        self.tid_to_weakhandle: MutableMapping[_TID, _Handle] = WeakValueDictionary()
+        self.sid_to_tid: dict[_SID, set[_TID]] = defaultdict(set)
 
     def clear(self) -> None:
         self.cloned.clear()
