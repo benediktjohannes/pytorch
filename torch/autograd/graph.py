@@ -636,14 +636,14 @@ def _is_fake_or_functional(tensor):
     return (mod == 'torch._subclasses.fake_tensor' and name == 'FakeTensor') or \
            (mod == 'torch._subclasses.functional_tensor' and name == 'FunctionalTensor')
 
-def _get_tid(tensor: torch.Tensor) -> int:
+def _get_tid(tensor: torch.Tensor) -> _TID:
     if _is_fake_or_functional(tensor):
         data_ptr = 0
     else:
         data_ptr = tensor.data_ptr()
     return (id(tensor) << 128) | (data_ptr << 64) | tensor._version
 
-def _get_sid(tensor: torch.Tensor) -> int:
+def _get_sid(tensor: torch.Tensor) -> _SID:
     if _is_fake_or_functional(tensor):
         data_ptr = 0
     else:
