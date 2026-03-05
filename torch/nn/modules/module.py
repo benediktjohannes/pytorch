@@ -120,6 +120,7 @@ _global_forward_pre_hooks: dict[int, Callable] = OrderedDict()
 _global_forward_hooks: dict[int, Callable] = OrderedDict()
 _global_forward_hooks_always_called: dict[int, bool] = OrderedDict()
 _global_forward_hooks_with_kwargs: dict[int, bool] = OrderedDict()
+_noHookSet = True
 
 
 def _has_any_global_hook():
@@ -243,6 +244,7 @@ def register_module_forward_pre_hook(hook: Callable[..., None]) -> RemovableHand
     """
     handle = RemovableHandle(_global_forward_pre_hooks)
     _global_forward_pre_hooks[handle.id] = hook
+    _noHookSet = False
     return handle
 
 
@@ -286,6 +288,7 @@ def register_module_forward_hook(
         _global_forward_hooks, extra_dict=_global_forward_hooks_always_called
     )
     _global_forward_hooks[handle.id] = hook
+    _noHookSet = False
     if with_kwargs:
         _global_forward_hooks_with_kwargs[handle.id] = True
     if always_call:
@@ -319,6 +322,7 @@ def register_module_backward_hook(
 
     handle = RemovableHandle(_global_backward_hooks)
     _global_backward_hooks[handle.id] = hook
+    _noHookSet = False
     return handle
 
 
@@ -346,6 +350,7 @@ def register_module_full_backward_pre_hook(
     """
     handle = RemovableHandle(_global_backward_pre_hooks)
     _global_backward_pre_hooks[handle.id] = hook
+    _noHookSet = False
     return handle
 
 
@@ -382,6 +387,7 @@ def register_module_full_backward_hook(
 
     handle = RemovableHandle(_global_backward_hooks)
     _global_backward_hooks[handle.id] = hook
+    _noHookSet = False
     return handle
 
 
@@ -1427,6 +1433,8 @@ class Module:
         """
         handle = RemovableHandle(self._backward_pre_hooks)
         self._backward_pre_hooks[handle.id] = hook
+        global _noHookSet
+        _noHookSet = False
         if prepend:
             self._backward_pre_hooks.move_to_end(handle.id, last=False)  # type: ignore[attr-defined]
         return handle
@@ -1455,6 +1463,8 @@ class Module:
 
         handle = RemovableHandle(self._backward_hooks)
         self._backward_hooks[handle.id] = hook
+        global _noHookSet
+        _noHookSet = False
         return handle
 
     def register_full_backward_hook(
@@ -1519,6 +1529,8 @@ class Module:
 
         handle = RemovableHandle(self._backward_hooks)
         self._backward_hooks[handle.id] = hook
+        global _noHookSet
+        _noHookSet = False
         if prepend:
             self._backward_hooks.move_to_end(handle.id, last=False)  # type: ignore[attr-defined]
         return handle
@@ -1677,6 +1689,8 @@ class Module:
             self._forward_pre_hooks, extra_dict=self._forward_pre_hooks_with_kwargs
         )
         self._forward_pre_hooks[handle.id] = hook
+        global _noHookSet
+        _noHookSet = False
         if with_kwargs:
             self._forward_pre_hooks_with_kwargs[handle.id] = True
 
@@ -1743,6 +1757,8 @@ class Module:
             ],
         )
         self._forward_hooks[handle.id] = hook
+        global _noHookSet
+        _noHookSet = False
         if with_kwargs:
             self._forward_hooks_with_kwargs[handle.id] = True
         if always_call:
@@ -1783,9 +1799,18 @@ class Module:
         forward_call = (self._slow_forward if torch._C._get_tracing_state() else self.forward)
         # If we don't have any hooks, we want to skip the rest of the logic in
         # this function, and just call forward.
-        if not (self._backward_hooks or self._backward_pre_hooks or self._forward_hooks or self._forward_pre_hooks
-                or _global_backward_pre_hooks or _global_backward_hooks
-                or _global_forward_hooks or _global_forward_pre_hooks):
+        if (_noHookSet):
+            return forward_call(*args, **kwargs)
+        elif not (
+            self._backward_hooks
+            or self._backward_pre_hooks
+            or self._forward_hooks
+            or self._forward_pre_hooks
+            or _global_backward_pre_hooks
+            or _global_backward_hooks
+            or _global_forward_hooks
+            or _global_forward_pre_hooks
+        ):
             return forward_call(*args, **kwargs)
 
         result = None
