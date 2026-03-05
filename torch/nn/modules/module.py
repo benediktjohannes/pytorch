@@ -1857,18 +1857,11 @@ class Module:
 
             result = forward_call(*args, **kwargs)
             if _global_forward_hooks or self._forward_hooks:
-                for hook_id, hook in _global_forward_hooks.items():
-                    if hook_id in _global_forward_hooks_always_called or hook_id in self._forward_hooks_always_called:
-                        called_always_called_hooks.add(hook_id)
-
-                    if hook_id in _global_forward_hooks_with_kwargs or hook_id in self._forward_hooks_with_kwargs:
-                        hook_result = hook(self, args, kwargs, result)
-                    else:
-                        hook_result = hook(self, args, result)
-
-                    if hook_result is not None:
-                        result = hook_result
-                for hook_id, hook in self._forward_hooks.items():
+                for hook_id, hook in (
+                    *_global_forward_hooks.items(),
+                    *self._forward_hooks.items(),
+                ):
+                    # mark that always called hook is run
                     if hook_id in self._forward_hooks_always_called or hook_id in _global_forward_hooks_always_called:
                         called_always_called_hooks.add(hook_id)
 
