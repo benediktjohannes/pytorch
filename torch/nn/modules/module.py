@@ -30,7 +30,7 @@ __all__ = [
     "Module",
 ]
 
-_grad_t = tuple[Tensor, ...] | Tensor
+_grad_t = Union[tuple[Tensor, ...], Tensor]
 # See https://mypy.readthedocs.io/en/latest/generics.html#generic-methods-and-generic-self for the use
 # of `T` to annotate `self`. Many methods of `Module` return `self` and we want those return values to be
 # the type of the subclass, not the looser type of `Module`.
@@ -72,7 +72,7 @@ _global_parameter_registration_hooks: dict[int, Callable] = OrderedDict()
 
 
 class _WrappedHook:
-    def __init__(self, hook: Callable, module: Optional["Module"] = None) -> None:  # noqa: UP007
+    def __init__(self, hook: Callable, module: Optional["Module"] = None) -> None:
         self.hook: Callable = hook
         functools.update_wrapper(self, hook)
 
@@ -120,6 +120,7 @@ _global_forward_pre_hooks: dict[int, Callable] = OrderedDict()
 _global_forward_hooks: dict[int, Callable] = OrderedDict()
 _global_forward_hooks_always_called: dict[int, bool] = OrderedDict()
 _global_forward_hooks_with_kwargs: dict[int, bool] = OrderedDict()
+_noHookSet: bool = True
 
 
 def _has_any_global_hook():
@@ -243,6 +244,7 @@ def register_module_forward_pre_hook(hook: Callable[..., None]) -> RemovableHand
     """
     handle = RemovableHandle(_global_forward_pre_hooks)
     _global_forward_pre_hooks[handle.id] = hook
+    _noHookSet = False
     return handle
 
 
@@ -286,6 +288,7 @@ def register_module_forward_hook(
         _global_forward_hooks, extra_dict=_global_forward_hooks_always_called
     )
     _global_forward_hooks[handle.id] = hook
+    _noHookSet = False
     if with_kwargs:
         _global_forward_hooks_with_kwargs[handle.id] = True
     if always_call:
@@ -319,6 +322,7 @@ def register_module_backward_hook(
 
     handle = RemovableHandle(_global_backward_hooks)
     _global_backward_hooks[handle.id] = hook
+    _noHookSet = False
     return handle
 
 
@@ -346,6 +350,7 @@ def register_module_full_backward_pre_hook(
     """
     handle = RemovableHandle(_global_backward_pre_hooks)
     _global_backward_pre_hooks[handle.id] = hook
+    _noHookSet = False
     return handle
 
 
@@ -382,6 +387,7 @@ def register_module_full_backward_hook(
 
     handle = RemovableHandle(_global_backward_hooks)
     _global_backward_hooks[handle.id] = hook
+    _noHookSet = False
     return handle
 
 
@@ -475,7 +481,7 @@ class Module:
     _load_state_dict_pre_hooks: dict[int, Callable]
     _state_dict_pre_hooks: dict[int, Callable]
     _load_state_dict_post_hooks: dict[int, Callable]
-    _modules: dict[str, Optional["Module"]]  # noqa: UP007
+    _modules: dict[str, Optional["Module"]]
     call_super_init: bool = False
     _compiled_call_impl: Callable | None = None
 
@@ -639,7 +645,7 @@ class Module:
                     param = output
             self._parameters[name] = param
 
-    def add_module(self, name: str, module: Optional["Module"]) -> None:  # noqa: UP007
+    def add_module(self, name: str, module: Optional["Module"]) -> None:
         r"""Add a child module to the current module.
 
         The module can be accessed as an attribute using the given name.
@@ -667,7 +673,7 @@ class Module:
                 module = output
         self._modules[name] = module
 
-    def register_module(self, name: str, module: Optional["Module"]) -> None:  # noqa: UP007
+    def register_module(self, name: str, module: Optional["Module"]) -> None:
         r"""Alias for :func:`add_module`."""
         self.add_module(name, module)
 
@@ -817,7 +823,7 @@ class Module:
                 raise AttributeError("`" + atoms[-1] + "` is not an nn.Module")
         setattr(parent, atoms[-1], module)
 
-    def get_parameter(self, target: str) -> Parameter:
+    def get_parameter(self, target: str) -> "Parameter":
         """Return the parameter given by ``target`` if it exists, otherwise throw an error.
 
         See the docstring for ``get_submodule`` for a more detailed
@@ -853,7 +859,7 @@ class Module:
 
         return param
 
-    def get_buffer(self, target: str) -> Tensor:
+    def get_buffer(self, target: str) -> "Tensor":
         """Return the buffer given by ``target`` if it exists, otherwise throw an error.
 
         See the docstring for ``get_submodule`` for a more detailed
@@ -1427,6 +1433,8 @@ class Module:
         """
         handle = RemovableHandle(self._backward_pre_hooks)
         self._backward_pre_hooks[handle.id] = hook
+        global _noHookSet
+        _noHookSet = False
         if prepend:
             self._backward_pre_hooks.move_to_end(handle.id, last=False)  # type: ignore[attr-defined]
         return handle
@@ -1455,6 +1463,8 @@ class Module:
 
         handle = RemovableHandle(self._backward_hooks)
         self._backward_hooks[handle.id] = hook
+        global _noHookSet
+        _noHookSet = False
         return handle
 
     def register_full_backward_hook(
@@ -1519,6 +1529,8 @@ class Module:
 
         handle = RemovableHandle(self._backward_hooks)
         self._backward_hooks[handle.id] = hook
+        global _noHookSet
+        _noHookSet = False
         if prepend:
             self._backward_hooks.move_to_end(handle.id, last=False)  # type: ignore[attr-defined]
         return handle
@@ -1677,6 +1689,8 @@ class Module:
             self._forward_pre_hooks, extra_dict=self._forward_pre_hooks_with_kwargs
         )
         self._forward_pre_hooks[handle.id] = hook
+        global _noHookSet
+        _noHookSet = False
         if with_kwargs:
             self._forward_pre_hooks_with_kwargs[handle.id] = True
 
@@ -1743,6 +1757,8 @@ class Module:
             ],
         )
         self._forward_hooks[handle.id] = hook
+        global _noHookSet
+        _noHookSet = False
         if with_kwargs:
             self._forward_hooks_with_kwargs[handle.id] = True
         if always_call:
@@ -1779,13 +1795,35 @@ class Module:
 
     # torchrec tests the code consistency with the following code
     # fmt: off
+    
     def _call_impl(self, *args, **kwargs):
         forward_call = (self._slow_forward if torch._C._get_tracing_state() else self.forward)
         # If we don't have any hooks, we want to skip the rest of the logic in
         # this function, and just call forward.
-        if not (self._backward_hooks or self._backward_pre_hooks or self._forward_hooks or self._forward_pre_hooks
-                or _global_backward_pre_hooks or _global_backward_hooks
-                or _global_forward_hooks or _global_forward_pre_hooks):
+        # import time
+        # start = time.perf_counter()
+        # for i in range(100):
+        #if not (self._backward_hooks or self._backward_pre_hooks or self._forward_hooks or self._forward_pre_hooks
+        #        or _global_backward_pre_hooks or _global_backward_hooks
+        #        or _global_forward_hooks or _global_forward_pre_hooks):
+            #if (self.heheha):
+                #print("lol")
+        #if not (self.heheha):
+            # end = time.perf_counter()
+            # elapsed = end - start
+            # print(f"{elapsed:.6f}")
+        if (_noHookSet):
+            return forward_call(*args, **kwargs)
+        elif not (
+            self._backward_hooks
+            or self._backward_pre_hooks
+            or self._forward_hooks
+            or self._forward_pre_hooks
+            or _global_backward_pre_hooks
+            or _global_backward_hooks
+            or _global_forward_hooks
+            or _global_forward_pre_hooks
+        ):
             return forward_call(*args, **kwargs)
 
         result = None
@@ -1831,11 +1869,18 @@ class Module:
 
             result = forward_call(*args, **kwargs)
             if _global_forward_hooks or self._forward_hooks:
-                for hook_id, hook in (
-                    *_global_forward_hooks.items(),
-                    *self._forward_hooks.items(),
-                ):
-                    # mark that always called hook is run
+                for hook_id, hook in _global_forward_hooks.items():
+                    if hook_id in _global_forward_hooks_always_called or hook_id in self._forward_hooks_always_called:
+                        called_always_called_hooks.add(hook_id)
+
+                    if hook_id in _global_forward_hooks_with_kwargs or hook_id in self._forward_hooks_with_kwargs:
+                        hook_result = hook(self, args, kwargs, result)
+                    else:
+                        hook_result = hook(self, args, result)
+
+                    if hook_result is not None:
+                        result = hook_result
+                for hook_id, hook in self._forward_hooks.items():
                     if hook_id in self._forward_hooks_always_called or hook_id in _global_forward_hooks_always_called:
                         called_always_called_hooks.add(hook_id)
 
@@ -2835,7 +2880,7 @@ class Module:
 
     def named_modules(
         self,
-        memo: Optional[set["Module"]] = None,  # noqa: UP007
+        memo: set["Module"] | None = None,
         prefix: str = "",
         remove_duplicate: bool = True,
     ):
