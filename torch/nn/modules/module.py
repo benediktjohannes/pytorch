@@ -120,7 +120,7 @@ _global_forward_pre_hooks: dict[int, Callable] = OrderedDict()
 _global_forward_hooks: dict[int, Callable] = OrderedDict()
 _global_forward_hooks_always_called: dict[int, bool] = OrderedDict()
 _global_forward_hooks_with_kwargs: dict[int, bool] = OrderedDict()
-_noHookSet: bool = True
+_noHookSet = True
 
 
 def _has_any_global_hook():
