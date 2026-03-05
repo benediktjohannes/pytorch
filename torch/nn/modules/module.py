@@ -1795,7 +1795,6 @@ class Module:
 
     # torchrec tests the code consistency with the following code
     # fmt: off
-    
     def _call_impl(self, *args, **kwargs):
         forward_call = (self._slow_forward if torch._C._get_tracing_state() else self.forward)
         # If we don't have any hooks, we want to skip the rest of the logic in
