@@ -1800,18 +1800,6 @@ class Module:
         forward_call = (self._slow_forward if torch._C._get_tracing_state() else self.forward)
         # If we don't have any hooks, we want to skip the rest of the logic in
         # this function, and just call forward.
-        # import time
-        # start = time.perf_counter()
-        # for i in range(100):
-        #if not (self._backward_hooks or self._backward_pre_hooks or self._forward_hooks or self._forward_pre_hooks
-        #        or _global_backward_pre_hooks or _global_backward_hooks
-        #        or _global_forward_hooks or _global_forward_pre_hooks):
-            #if (self.heheha):
-                #print("lol")
-        #if not (self.heheha):
-            # end = time.perf_counter()
-            # elapsed = end - start
-            # print(f"{elapsed:.6f}")
         if (_noHookSet):
             return forward_call(*args, **kwargs)
         elif not (
