@@ -244,6 +244,7 @@ def register_module_forward_pre_hook(hook: Callable[..., None]) -> RemovableHand
     """
     handle = RemovableHandle(_global_forward_pre_hooks)
     _global_forward_pre_hooks[handle.id] = hook
+    global _noHookSet
     _noHookSet = False
     return handle
 
@@ -288,6 +289,7 @@ def register_module_forward_hook(
         _global_forward_hooks, extra_dict=_global_forward_hooks_always_called
     )
     _global_forward_hooks[handle.id] = hook
+    global _noHookSet
     _noHookSet = False
     if with_kwargs:
         _global_forward_hooks_with_kwargs[handle.id] = True
@@ -322,6 +324,7 @@ def register_module_backward_hook(
 
     handle = RemovableHandle(_global_backward_hooks)
     _global_backward_hooks[handle.id] = hook
+    global _noHookSet
     _noHookSet = False
     return handle
 
@@ -350,6 +353,7 @@ def register_module_full_backward_pre_hook(
     """
     handle = RemovableHandle(_global_backward_pre_hooks)
     _global_backward_pre_hooks[handle.id] = hook
+    global _noHookSet
     _noHookSet = False
     return handle
 
@@ -387,6 +391,7 @@ def register_module_full_backward_hook(
 
     handle = RemovableHandle(_global_backward_hooks)
     _global_backward_hooks[handle.id] = hook
+    global _noHookSet
     _noHookSet = False
     return handle
 
