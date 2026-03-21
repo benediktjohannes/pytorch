@@ -261,7 +261,7 @@ class Wishart(ExponentialFamily):
         """
 
         if max_try_correction is None:
-            max_try_correction = 3 if torch._C._get_tracing_state() else 10
+            max_try_correction = 3 if torch._C._is_tracing() else 10
 
         sample_shape = torch.Size(sample_shape)
         sample = self._bartlett_sampling(sample_shape)
@@ -271,7 +271,7 @@ class Wishart(ExponentialFamily):
         if self._batch_shape:
             is_singular = is_singular.amax(self._batch_dims)
 
-        if torch._C._get_tracing_state():
+        if torch._C._is_tracing():
             # Less optimized version for JIT
             for _ in range(max_try_correction):
                 sample_new = self._bartlett_sampling(sample_shape)

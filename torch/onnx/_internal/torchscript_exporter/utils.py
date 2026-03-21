@@ -1294,8 +1294,7 @@ def _setup_trace_module_map(
             setattr(module, attr_name, _get_module_attributes(module))
 
         def _track_module_attributes_forward_hook(module, input, output) -> None:
-            tracing_state = _C._get_tracing_state()
-            if not tracing_state:
+            if not torch._C._is_tracing():
                 return
 
             graph = tracing_state.graph()
