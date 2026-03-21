@@ -4782,7 +4782,7 @@ def interpolate(  # noqa: F811
         # The C++ code will recompute it based on the (integer) output size.
         if scale_factors is None:
             raise AssertionError("scale_factors is unexpectedly None")
-        if not torch.jit.is_scripting() and torch._C._get_tracing_state():
+        if not torch.jit.is_scripting() and torch._C._is_tracing():
             # make scale_factor a tensor in tracing so constant doesn't get baked in
             output_size = [
                 (
