@@ -121,7 +121,7 @@ class Geometric(Distribution):
         shape = self._extended_shape(sample_shape)
         tiny = torch.finfo(self.probs.dtype).tiny
         with torch.no_grad():
-            if torch._C._get_tracing_state():
+            if torch._C._is_tracing():
                 # [JIT WORKAROUND] lack of support for .uniform_()
                 u = torch.rand(shape, dtype=self.probs.dtype, device=self.probs.device)
                 u = u.clamp(min=tiny)
