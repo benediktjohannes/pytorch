@@ -300,7 +300,7 @@ def pack_padded_sequence(
         a :class:`PackedSequence` object
     """
     if not isinstance(lengths, torch.Tensor):
-        if torch._C._get_tracing_state():
+        if torch._C._is_tracing():
             warnings.warn(
                 "pack_padded_sequence has been called with a Python list of "
                 "sequence lengths. The tracer cannot track the data flow of Python "
