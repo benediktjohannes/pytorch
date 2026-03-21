@@ -63,7 +63,7 @@ def _standard_normal(
     dtype: _dtype | None,
     device: Device | None,
 ) -> Tensor:
-    if torch._C._get_tracing_state():
+    if torch._C._is_tracing():
         # [JIT WORKAROUND] lack of support for .normal_()
         return torch.normal(
             torch.zeros(shape, dtype=dtype, device=device),
@@ -189,7 +189,7 @@ def tril_matrix_to_vec(mat: Tensor, diag: int = 0) -> Tensor:
     which comprises of lower triangular elements from the matrix in row order.
     """
     n = mat.shape[-1]
-    if not torch._C._get_tracing_state() and (diag < -n or diag >= n):
+    if not torch._C._is_tracing() and (diag < -n or diag >= n):
         raise ValueError(f"diag ({diag}) provided is outside [{-n}, {n - 1}].")
     arange = torch.arange(n, device=mat.device)
     tril_mask = arange < arange.view(-1, 1) + (diag + 1)
@@ -208,7 +208,7 @@ def vec_to_tril_matrix(vec: Tensor, diag: int = 0) -> Tensor:
         + ((1 + 2 * diag) ** 2 + 8 * vec.shape[-1] + 4 * abs(diag) * (diag + 1)) ** 0.5
     ) / 2
     eps = torch.finfo(vec.dtype).eps
-    if not torch._C._get_tracing_state() and (round(n) - n > eps):
+    if not torch._C._is_tracing() and (round(n) - n > eps):
         raise ValueError(
             f"The size of last dimension is {vec.shape[-1]} which cannot be expressed as "
             + "the lower triangular part of a square D x D matrix."
