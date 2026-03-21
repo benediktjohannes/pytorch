@@ -428,7 +428,7 @@ def _inject_property(module: Module, tensor_name: str) -> None:
                     "Caching is not implemented for scripting. "
                     "Either disable caching or avoid scripting."
                 )
-            elif torch._C._get_tracing_state() is not None:
+            elif torch._C._is_tracing():
                 # Tracing
                 raise RuntimeError(
                     "Cannot trace a model while caching parametrizations."
