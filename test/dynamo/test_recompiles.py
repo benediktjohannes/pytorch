@@ -214,7 +214,7 @@ class RecompileTests(torch._dynamo.test_case.TestCase):
         cnt = torch._dynamo.testing.CompileCounter()
         x = torch.tensor(0)
 
-        with dc.patch(use_lamba_guard_for_object_aliasing=False):
+        with dc.patch(use_lambda_guard_for_object_aliasing=False):
             compiled = torch.compile(foo, backend=cnt, fullgraph=True)
 
             shared = Box()
