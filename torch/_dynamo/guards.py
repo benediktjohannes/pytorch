@@ -3285,7 +3285,7 @@ class GuardBuilder(GuardBuilderBase):
         code = [f"{ref_b} is {ref_a}"]
         self._set_guard_export_info(guard, code)
 
-        if config.use_lamba_guard_for_object_aliasing:
+        if config.use_lambda_guard_for_object_aliasing:
             # Save the code part so that we can install a lambda guard at the
             # end.  Read the Note - On Lambda guarding of object aliasing - to
             # get more information.
